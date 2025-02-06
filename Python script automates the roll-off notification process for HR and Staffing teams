@@ -1,0 +1,89 @@
+import pandas as pd
+import datetime as dt
+import appscript
+
+# Load the Excel file (Replace with actual file path)
+file_path = "your_file_path.xlsx"
+df = pd.read_excel(file_path, sheet_name="Sheet1")
+
+# Convert 'Assignment End' to datetime
+df["Assignment End"] = pd.to_datetime(df["Assignment End"], errors='coerce')
+
+# Function to rearrange names from "Surname, Name" to "Name Surname"
+def fix_name_format(name):
+    if isinstance(name, str) and "," in name:
+        parts = name.split(", ")
+        if len(parts) == 2:
+            return f"{parts[1]} {parts[0]}"  # Swap order to "Name Surname"
+    return name  # Return as is if no comma
+
+# Apply the name formatting fix
+df["Name"] = df["Name"].apply(fix_name_format)
+
+# Get today's date
+today = dt.date.today()
+
+# Calculate next Wednesday and Sunday
+next_wednesday = today + dt.timedelta(days=(2 - today.weekday() + 7) % 7)
+next_sunday = next_wednesday + dt.timedelta(days=4)
+
+# Filter employees with Assignment End in that range
+filtered_df = df[df["Assignment End"].dt.date.between(next_wednesday, next_sunday)]
+
+# Group by 'Project ID' only
+grouped = filtered_df.groupby("Project ID")
+
+# Function to generate a properly formatted email in plain text
+def generate_email_text(project_name, project_id, names, assignment_end):
+    monday_after = assignment_end + dt.timedelta(days=(7 - assignment_end.weekday()))  # Next Monday
+
+    email_body = f"""
+Hi,
+
+Hope you’re well!
+
+I’m reaching out as we are expecting the following individuals to finish on {project_name} (Project ID: {project_id}) on {assignment_end.strftime('%B %d, %Y')},
+and therefore be available for new assignments from {monday_after.strftime('%B %d, %Y')}.
+
+{chr(10).join([f'  • {name}' for name in names])}
+
+Please let us know if an extension is needed.
+
+If you have any questions, please let me know.
+
+Best,
+"""
+    return email_body
+
+# Generate and save emails in Mac Mail with multiple recipients
+mail = appscript.app("Mail")
+
+# Loop through each group (Project ID)
+for project_id, group in grouped:
+    names = group["Name"].tolist()  # List of names
+    assignment_end = group["Assignment End"].iloc[0]  # Get the first date in the group
+    project_name = group["Project Name"].iloc[0]  # Get the project name
+
+    # Extract unique emails from "Staffers Email" column
+    staffers_emails = group["Staffers Email"].dropna().unique().tolist()
+
+    # Generate email content
+    email_body = generate_email_text(project_name, project_id, names, assignment_end)
+
+    # Create a new email draft in Mac Mail
+    new_mail = mail.make(new=appscript.k.outgoing_message)
+    new_mail.subject.set(f"Upcoming Roll-Offs for {project_name} (Project ID: {project_id})")
+    new_mail.content.set(email_body)  # Set plain text content
+    new_mail.visible.set(False)  # Save and close the draft
+
+    # Add recipients
+    for email in staffers_emails:
+        recipient = new_mail.to_recipients.end.make(
+            new=appscript.k.recipient,
+            with_properties={appscript.k.address: email}
+        )
+
+    # Save the draft and close the window
+    new_mail.save()
+
+print("Emails have been generated and saved as drafts in Mac Mail.")
