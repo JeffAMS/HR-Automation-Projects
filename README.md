@@ -1,4 +1,4 @@
-#  Roll-Off Email Automation with Python
+#  Email Automation with Python
 
 ##  Project Overview
 This Python script automates the roll-off notification process for HR and Staffing teams, reducing manual work and improving efficiency. It:
